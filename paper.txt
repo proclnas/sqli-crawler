@@ -60,113 +60,109 @@ Code:
 */
  
 set_time_limit(0);
-error_reporting(E_ALL);
+error_reporting(0);
  
 Class BingScan {
   /**
-   * @var string dork | dork to search on bing engine
+   * @var string dork to search on bing engine
    */
-   var $dork;
+   protected $dork;
    /**
-    * @var int timeout | timeout connection
+    * @var string result
     */
-   var $timeout;
+   protected $log;
    /**
-    * @var string user_agent | user_agent behavior
+    * @var string body response
     */
-   var $user_agent;
+   protected $http_response;
    /**
-    * @var string log | result
+    * @var array info about request
     */
-   var $log;
+   protected $http_info;
    /**
-    * @var string http_response | body response
+    * @var int page limit to search
     */
-   var $http_response;
-   /**
-    * @var array http_info | info about request
-    */
-   var $http_info;
-   /**
-    * @var int limit_page | page limit to search
-    */
-   var $limit_page;
+   protected $limit_page;
+
+   // Default timeout
+   CONST DEFAULT_TIMEOUT = 10;
    
-   function __construct($dork, $log){
-     $this->dork       = urlencode($dork);
-     $this->user_agent = 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:23.0) Gecko/20100101 Firefox/23.0';
-     $this->limit_page = 411; // May be more
-     $this->regex      = "#href=\"(.*?)\">#"; // Simple , would be more specific
+   /**
+    * Init
+    * 
+    * @param string $dork
+    * @param string $log
+    * @param int    $limit_page
+    */
+   public function __construct($dork, $log, $limit_page = 411){
+     $this->dork       = $dork;
+     $this->limit_page = $limit_page;
+     $this->regex      = '#href=\"(.*?)\">#'; // Simple , would be more specific
      $this->log        = $log;
-     $this->uri_list   = array(); // To check repeated results
-     $this->timeout    = 10;
-   }
-   
-   /**
-    * Save content
-    */
-   function save_content(){
-     foreach($this->uri_list as $uri):
-      file_put_contents($this->log, $uri."\n", FILE_APPEND);
-     endforeach;
    }
    
    /**
     * Get request on bing
-    * @param string $uri
+    *
+    * @param  string $uri
+    * @return BingScan
     */
-   function get($uri){
-     $ch = curl_init();
-     curl_setopt($ch, CURLOPT_URL, $uri);
-     curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-     curl_setopt($ch, CURLOPT_USERAGENT, $this->user_agent);
-     curl_setopt($ch, CURLOPT_HTTPHEADER, array('Expect:', 'Connection: close'));
-     curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, $this->timeout);
-     $this->http_response = curl_exec($ch);
-     $this->http_info     = curl_getinfo($ch);
+   protected function get($uri){
+    $ch  = curl_init();
+    curl_setopt_array($ch, [
+      CURLOPT_URL            => $uri,
+      CURLOPT_RETURNTRANSFER => TRUE,
+      CURLOPT_USERAGENT      => 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:23.0) Gecko/20100101 Firefox/23.0',
+      CURLOPT_HTTPHEADER     => ['Expect:', 'Connection: close', 'Content-type: application/x-www-form-urlencoded'],
+      CURLOPT_CONNECTTIMEOUT => self::DEFAULT_TIMEOUT
+    ]);
+
+    $this->http_response = curl_exec($ch);
+    $this->http_info     = curl_getinfo($ch);
+
+    return $this;
    }
    
    /**
     * Parse uris after get request
+    *
+    * @return BingScan
     */
-   function parse_uris(){
+   protected function parse_uris() {
     if(preg_match_all($this->regex, $this->http_response, $matches)):
       foreach($matches[1] as $uri):
         if($uri && strstr($uri, 'http://') && !preg_match('/msn|microsoft|php-brasil|facebook|4shared|bing|imasters|
-                    phpbrasil|php.net|yahoo|scriptbrasil|under-linux/', $uri) && !in_array($uri, $this->uri_list)): 
-                    
-          $uri = strstr($uri, '"', true);
-          $this->uri_list[] = $uri;
-        endif;
+                    phpbrasil|php.net|yahoo|scriptbrasil|under-linux/', $uri) && !in_array($uri, $this->uri_list))
+          file_put_contents($this->log, strstr($uri, '"', true), FILE_APPEND);
       endforeach;
     endif;
+
+    return $this;
    }
    
    /**
     * Init Crawler
+    *
+    * @return BingScan
     */
-   function scan(){
-    echo "Automating a sqli crawler.\n[] Bing scan module."; 
+   public function scan(){
+    echo 'Automating a sqli crawler.' . PHP_EOL,
+         '[] Bing scan module.' . PHP_EOL; 
      
     $pointer = 1;
-    $label   = urldecode($this->dork);
     
     while($pointer <= $this->limit_page):
-         
-      echo "\rDork: {$label} Page: {$pointer}/411";
-      $uri  = "http://www.bing.com/search?q={$this->dork}&go=&filt=all&first={$pointer}";
-      $this->get($uri);
-       
-      // Parse uris from $this->http_response  / Aqui separamos as urls do nosso resultado ($this->http_response)
-      $this->parse_uris();
+      echo "\rDork: {$this->dork} Page: {$pointer}/411";
+      $this->get("http://www.bing.com/search?q={$this->dork}&go=&filt=all&first={$pointer}")
+           ->parse_uris();
        
       $pointer += 10;
-        
     endwhile;
-    
-    $this->save_content();
+
+    return $this;
    }
 }
+
 
 
 +--------------------------------------------------------------------------------------------------------------+
@@ -190,14 +186,19 @@ são exibidas em uma página existe algo errado:
 - mysql_numrows()
 - mysql_preg_match()
 
+* Lembrando que as funções mysql_ estão depreciadas a algum tempo e ainda
+existem sistemas utilizando as mesmas! Referência:
+- http://php.net/manual/en/function.mysql-fetch-row.php
+
 Erros envolvendo essas mensagens são exibidas quando usuários
-mal intencionados manipulam um resultado final via uma requisição GET por exemplo utilizando queryString fora do padrão esperado:
+mal intencionados manipulam um resultado final via uma requisição GET por exemplo utilizando uma queryString fora do padrão. Abaixo temos uma consulta onde é esperado:
 
 http://site.com/noticia.php?id=(id x)
 
 caso ouvesse uma manipulação:
 
-http://site.com/noticia.php?id=10'
+http://site.com/noticia.php?id=10' ( Aqui o caractere ' (Aspas simples) buga a query
+já que isso dentro do código faz com que o resultado final fique quebrado)
 
 com uma aspa simples (') a requisição sai do comum e caso o programador não tenha
 tratado essa entrada provavelmente teremos um erro envolvendo uma ou mais das palavras acima, dessa forma
@@ -226,88 +227,81 @@ Code:
 */
 
 set_time_limit(0);
-error_reporting(E_ALL);
+error_reporting(0);
 
 Class sqliCrawler{
   /**
-   * @var string
+   * @var Uri file
    */
-  var $uri_file;
+  protected $uri_file;
   /**
-   * @var string|regex
+   * @var Words to be used in the pattern matching
    */
-  var $common_messages;
+  protected $common_errors;
   /**
-   * @var string
+   * @var Output to save
    */
-  var $log;
+  protected $log;
   /**
-   * @var string
+   * @var Body Response
    */
-  var $user_agent;
-  /**
-   * @var int
-   */
-  var $timeout;
-  /**
-   * @var string
-   */
-  var $http_response;
-  /**
-   * @var array
-   */
-  var $uris;
+  protected $http_response;
+
+  const DEFAULT_TIMEOUT = 10;
   
-  function __construct($uri_file, $log){
-    $this->uri_file        = $uri_file;
-    $this->common_messages = '/Mysql_|SQL|mysql_num_rows()|mysql_fetch_assoc()|mysql_result()|mysql_fetch_array()|mysql_numrows()|mysql_preg_match()/';
-    $this->log             = $log;
-    $this->user_agent      = 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:23.0) Gecko/20100101 Firefox/23.0';
-    $this->timeout         = 10;
-    $this->uris            = array();
+  public function __construct($uri_file, $log){
+    $this->uri_file      = array_filter(preg_split('/\n|\r\n?/', file_get_contents($uri_file)));
+    $this->common_errors = '/Mysql_|SQL|mysql_num_rows()|mysql_fetch_assoc()|mysql_result()|mysql_fetch_array()|mysql_numrows()|mysql_preg_match()/';
+    $this->log           = $log;
+    $this->user_agent    = '';
   }
   
-  function get($uri){
+  /**
+   * Get Method
+   *
+   * @param  string $uri
+   * @return sqliCrawler
+   */
+  protected function get($uri){
     $ch = curl_init();
-    curl_setopt($ch, CURLOPT_URL, $uri);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, array('Connection: close', 'Expect:'));
-    curl_setopt($ch, CURLOPT_USERAGENT, $this->user_agent);
-    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, $this->timeout);
+
+    curl_setopt_array($ch, [
+      CURLOPT_URL            => sprintf('%s\'', $uri),
+      CURLOPT_RETURNTRANSFER => TRUE,
+      CURLOPT_HTTPHEADER     => ['Connection: close', 'Expect:']
+      CURLOPT_USERAGENT      => 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:23.0) Gecko/20100101 Firefox/23.0',
+      CURLOPT_CONNECTTIMEOUT => self::DEFAULT_TIMEOUT
+    ]);
+
     $this->http_response = curl_exec($ch);
-  }
-  
-  /**
-   * Parse uri callback method | add ' string
-   */
-  function add_string($item){
-    if(strstr($item, '=')):
-      $this->uris[] = $item."'";
-    endif;
+    return $this;
   }
   
   /**
    * start method
+   * 
+   * @return sqliCrawler
    */
-  function crawler(){
-    echo "Automating a sqli crawler.\n[] Sqli crawler module.\n"; 
+  protected function crawler(){
+    echo 'Automating a sqli crawler.' . PHP_EOL
+         '[] Sqli crawler module.'    . PHP_EOL; 
     
-    // Prepare uris with (') to test in $this->uris
-    $tmp = array_filter(explode("\n", file_get_contents($this->uri_file)));
-    array_walk($tmp, array($this, 'add_string'));
-    
-    foreach($this->uris as $uri):
+    foreach($this->uri_file as $uri):
       $this->get($uri);
-      $msg = sprintf("[-] %s\n", $uri);
-      if(preg_match($this->common_messages, $this->http_response)):
-        $msg = sprintf("[+] %s\n", $uri);
+      $msg = sprintf('[-] %s' . PHP_EOL, $uri);
+
+      if(preg_match($this->common_errors, $this->http_response)):
+        $msg = sprintf('[+] %s' . PHP_EOL, $uri);
         file_put_contents($this->log, $msg, FILE_APPEND);
       endif;
       
       echo $msg;
     endforeach;
+
+    return $this;
   }
 }
+
 
 
 +--------------------------------------------------------------------------------------------------------------+
@@ -327,10 +321,11 @@ Code:
  * 
  * http://n4sss.blogspot.com.br | http://janissaries.org
  * 
+ * Require: php5-curl
  */
  
 set_time_limit(0);
-error_reporting(E_ALL);
+error_reporting(0);
 
 // Bing / sqli class
 require 'bing.php';
@@ -346,8 +341,8 @@ function help($argv){
   
   Params:
   
-  -d dork                 | dork to search into bing engine
-  -o uri_results          | results from bing
+  -d dork        | dork to search into bing engine
+  -o uri_results | results from bing
   
   +-------------------------------------------------------------+
   
@@ -356,35 +351,41 @@ function help($argv){
   
   Params:
   
-  -f uri_file            | File with uris to check sql message errors.
-  -o output              | Result with possible vulns.
+  -f uri_file | File with uris to check sql message errors.
+  -o output   | Result with possible vulns.
   
   By Rodrigo 'N4sss' | http://janissaries.org | http://n4sss.blogspot.com.br";
   
   return $banner;
 }
 
-// (-d (DORK) | -o (OUTPUT)) (-f (URI FILE TO SQLI SCAN))
+/**
+ * To launch bing scan: php main.php -d (DORK) -o (OUTPUT)
+ * To launch sqli scan: php main.php -f (URI FILE TO SQLI SCAN) -o (OUTPUT)
+ */
 $opt = getopt("d:o:f:");
+
+if (!count($opt)) exit(help($argv));
 
 // Bing scan
 if(isset($opt['d'], $opt['o'])):
   if(isset($opt['f'])) exit(help($argv));
+
   $dork   = $opt['d'];
   $output = $opt['o'];
-  $bing   = new BingScan($dork, $output);
+
+  $bing = new BingScan($dork, $output);
   $bing->scan();
-// Sqli scan
+
 elseif(isset($opt['f'], $opt['o'])):
   if(isset($opt['d'])) exit(help($argv));
+
   $uri_file = $opt['f'];
   $output   = $opt['o'];
-  $sqli     = new sqliCrawler($uri_file, $output);
-  $sqli->crawler();
-else:
-  exit(help($argv));
-endif;
 
+  $sqli = new SqliCrawler($uri_file, $output);
+  $sqli->crawler();
+endif;
 
 
 +--------------------------------------------------------------------------------------------------------------+
@@ -432,10 +433,10 @@ Dork: pagina.php?id= escola Page: 121/411
 
 e para utilizarmos o "sqli crawler" com os resultados do scan anterior:
 
-php main.php -f uri_results.txt -o possible_vulns.txt -o output
+php main.php -f uri_results.txt -o sqli_vulns.txt
 
 Todos os resultados serão gravados no nosso arquivo chamado (sqli_vulns.txt).
-Não deixarei os nomes originais dos sites por alguns motivos claros.
+Não deixarei os nomes originais dos sites por alguns motivos óbvios.
 
 ~$ php main.php -f urls.txt -o sqli_vulns.txt
 Automating a sqli crawler.
@@ -462,7 +463,9 @@ achar sites com erros que colocam em riscos dados de usuários e de sistemas imp
 
 Ao abrir um dos sites encontrados:
 
+---snip---
 Warning: mysql_fetch_array() expects parameter 1 to be resource, boolean given in /home/priv8/www/funcoes/funcoes.php on line 192
+---snip---
 
 Um erro que pode ser simples mas que implica e muito na segurança.
 
@@ -470,10 +473,9 @@ Podemos pegar como base esses dois scripts que escrevemos e automatizar muitos o
 ou até mesmo tarefas mais complexas que com a automatização diminui e muito o esforço e nos da uma vantagem
 em cima de pesquisas, seja elas quais forem. :-)
 
-
-
 Files:
 https://github.com/n4sss/sqli_crawler
+
 
                         //
                        //

@@ -9,85 +9,89 @@
 */
 
 set_time_limit(0);
-error_reporting(E_ALL);
+error_reporting(0);
 
-Class sqliCrawler{
+Class SqliCrawler{
 	/**
-	 * @var string
+	 * @var Uri file
 	 */
-	var $uri_file;
+	protected $uri_file;
 	/**
-	 * @var string|regex
+	 * @var Words to be used in the pattern matching
 	 */
-	var $common_messages;
+	protected $common_errors;
 	/**
-	 * @var string
+	 * @var Output to save
 	 */
-	var $log;
+	protected $log;
 	/**
-	 * @var string
+	 * @var Body Response
 	 */
-	var $user_agent;
-	/**
-	 * @var int
-	 */
-	var $timeout;
-	/**
-	 * @var string
-	 */
-	var $http_response;
-	/**
-	 * @var array
-	 */
-	var $uris;
+	protected $http_response;
+
+	const DEFAULT_TIMEOUT = 10;
 	
-	function __construct($uri_file, $log){
-		$this->uri_file        = $uri_file;
-		$this->common_messages = '/Mysql_|SQL|mysql_num_rows()|mysql_fetch_assoc()|mysql_result()|mysql_fetch_array()|mysql_numrows()|mysql_preg_match()/';
-		$this->log             = $log;
-		$this->user_agent      = 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:23.0) Gecko/20100101 Firefox/23.0';
-		$this->timeout         = 10;
-		$this->uris            = array();
+	public function __construct($uri_file, $log){
+		$this->uri_file      = array_filter(preg_split('/\n|\r\n?/', file_get_contents($uri_file)));
+		$this->common_errors = '/Mysql_|SQL|mysql_num_rows()|mysql_fetch_assoc()|mysql_result()|mysql_fetch_array()|mysql_numrows()|mysql_preg_match()/';
+		$this->log           = $log;
+		$this->user_agent    = '';
 	}
 	
-	function get($uri){
+	/**
+	 * Get Method
+	 *
+	 * @param  string $uri
+	 * @return sqliCrawler
+	 */
+	protected function get($uri){
 		$ch = curl_init();
-		curl_setopt($ch, CURLOPT_URL, $uri);
-		curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-		curl_setopt($ch, CURLOPT_HTTPHEADER, array('Connection: close', 'Expect:'));
-		curl_setopt($ch, CURLOPT_USERAGENT, $this->user_agent);
-		curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, $this->timeout);
+
+		curl_setopt_array($ch, [
+			CURLOPT_URL            => sprintf('%s\'', $uri),
+			CURLOPT_RETURNTRANSFER => TRUE,
+			CURLOPT_HTTPHEADER     => ['Connection: close', 'Expect:'],
+			CURLOPT_USERAGENT      => 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:23.0) Gecko/20100101 Firefox/23.0',
+			CURLOPT_CONNECTTIMEOUT => self::DEFAULT_TIMEOUT,
+			CURLOPT_TIMEOUT        => self::DEFAULT_TIMEOUT
+		]);
+
 		$this->http_response = curl_exec($ch);
+		return $this;
 	}
-	
+
 	/**
-	 * Parse uri callback method | add ' string
+	 * Checks if the uri match a querystring format
+	 * and returns into a generator 
+	 *
+	 * @return string $uri
 	 */
-	function add_string($item){
-		if(strstr($item, '=')):
-			$this->uris[] = $item."'";
-		endif;
+	protected function getUris() {
+		foreach ($this->uri_file as $uri)
+			if (strpos($uri, '=') !== false) yield $uri;
 	}
 	
 	/**
 	 * start method
+	 * 
+	 * @return sqliCrawler
 	 */
-	function crawler(){
-		echo "Automating a sqli crawler.\n[] Sqli crawler module.\n"; 
+	public function crawler(){
+		echo 'Automating a sqli crawler.' . PHP_EOL,
+		     '[] Sqli crawler module.'    . PHP_EOL; 
 		
-		// Prepare uris with (') to test in $this->uris
-		$tmp = array_filter(explode("\n", file_get_contents($this->uri_file)));
-		array_walk($tmp, array($this, 'add_string'));
-		
-		foreach($this->uris as $uri):
+		foreach($this->getUris() as $uri):
 			$this->get($uri);
-			$msg = sprintf("[-] %s\n", $uri);
-			if(preg_match($this->common_messages, $this->http_response)):
-				$msg = sprintf("[+] %s\n", $uri);
+			$msg = sprintf('[-] %s' . PHP_EOL, $uri);
+
+			if(preg_match($this->common_errors, $this->http_response)):
+				$msg = sprintf('[+] %s' . PHP_EOL, $uri);
 				file_put_contents($this->log, $msg, FILE_APPEND);
 			endif;
 			
 			echo $msg;
 		endforeach;
+
+		return $this;
 	}
 }
