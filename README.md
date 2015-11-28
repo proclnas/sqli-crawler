@@ -5,7 +5,7 @@ A simple scan to show how to automatize a simple
 task to grab sites with security issues(sqli) using
 simple pattern matching and a bing crawler.
 
-![PHP](https://img.shields.io/badge/PHP-5.3%2B-blue.svg)
+![PHP](https://img.shields.io/badge/PHP-5.4%2B-blue.svg)
 ![OS](https://img.shields.io/badge/Supported%20OS-Linux%20%7C%20Win-orange.svg)
 
 ### Dependencies
