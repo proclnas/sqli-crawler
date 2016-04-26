@@ -114,7 +114,7 @@ Class SqliCrawler{
 	 */
 	public function crawler(){
 		echo 'Automating a sqli crawler.' . PHP_EOL,
-		     '[] Sqli crawler module.'    . PHP_EOL; 
+		     '[] Sqli crawler module.' . PHP_EOL; 
 		
 		foreach($this->getUris() as $uri) {
             $this->get($uri);
